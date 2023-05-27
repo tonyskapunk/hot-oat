@@ -1,0 +1,15 @@
+name: Check Shell Scripts
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-shell-scripts:
+    name: Check Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@v2.0.0
