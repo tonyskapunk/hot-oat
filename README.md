@@ -1,7 +1,7 @@
 # hot-oat
 
 [![Check Shell Scripts](https://github.com/tonyskapunk/hot-oat/actions/workflows/shellcheck.yaml/badge.svg)](https://github.com/tonyskapunk/hot-oat/actions/workflows/shellcheck.yaml)
-[![Release](https://img.shields.io/github/v/release/tonyskapunk/hot-oat?style=plastic)]()
+[![Release](https://img.shields.io/github/v/release/tonyskapunk/hot-oat?style=plastic)](../../releases)
 [![License](https://img.shields.io/github/license/tonyskapunk/hot-oat?style=plastic)](/LICENSE)
 
 ![Logo of a bowl with oats, steam going out with a red circle in the back representing the sun](./assets/hot-oat.svg)

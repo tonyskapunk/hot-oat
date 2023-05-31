@@ -1,0 +1,246 @@
+#!/bin/bash
+# Generate a one-time password using a key and a counter.
+
+DEFAULT_COPY_TOOL=$( type -p wl-copy 2>/dev/null )
+DEFAULT_COPY_OPTIONS=( -n -o )
+DEFAULT_DIR=~/.config/hot-oat
+readonly DEFAULT_COPY_TOOL
+readonly DEFAULT_COPY_OPTIONS
+readonly DEFAULT_DIR
+
+HOT_OAT_COPY_TOOL=${HOT_OAT_COPY_TOOL:-${DEFAULT_COPY_TOOL}}
+HOT_OAT_COPY_OPTIONS=( "${HOT_OAT_COPY_OPTIONS:-${DEFAULT_COPY_OPTIONS}}" )
+HOT_OAT_DIR=${HOT_OAT_DIR:-${DEFAULT_DIR}}
+
+name=$(basename "${0}")
+algorithm=sha1
+assumeyes=0
+digits=6
+remove=0
+force=0
+version=1.0.0
+
+help() {
+    echo
+    echo "Usage: ${name} [OPTIONS] NAMESPACE"
+    echo "🔥🥣 Generates a one-time password using a key and a counter."
+    echo 
+    echo "Arguments:"
+    echo "  NAMESPACE               The namespace of the HOTP."
+    echo
+    echo "Options:"
+    echo "  -h, --help              Show this help message and exit."
+    echo "  -a, --algorithm <algo>  The algorithm to use, sha1, sha256 or sha512. (Default: sha1)"
+    echo "  -d, --digits <digit>    The number of digits to use for the token, 6 or 8. (Default: 6)"
+    echo "  -f, --force             Force key generation and counter reset. ⚠️"
+    echo "  -g, --gen-oath          Generate key and counter in a namespace."
+    echo "  -l, --list              List namespaces."
+    echo "  -r, --remove            Removes namespace. ⚠️"
+    echo "  -y, --assumeyes         Automatically answer yes for all questions. ⚠️"
+    echo "  -v, --version           Show version an exit."
+    echo
+    echo "Environment variables:"
+    echo "  HOT_OAT_COPY_TOOL       The command to use to copy the password to the clipboard."
+    echo "  HOT_OAT_COPY_OPTIONS    The options to pass to the copy command."
+    echo "  HOT_OAT_DIR             The directory where the key and counter are stored."
+    echo
+    echo "The default directory is ${DEFAULT_DIR}."
+    echo "The default copy command is ${DEFAULT_COPY_TOOL}."
+    echo "The default copy options are ${DEFAULT_COPY_OPTIONS}."
+    echo
+}
+
+warning() {
+    local action=${1}
+    if [[ ${assumeyes} -eq 0 ]]; then
+        read -p "Warning: ${action} could destroy data, are you sure? [y/N] " -n 1 -r continue
+        echo
+        if [[ ! ${continue} =~ ^[Yy]$ ]]; then
+            echo "Aborting..." >&2
+            exit 0
+        fi
+    fi
+
+}
+
+gen-oath() {
+    local namespace=${1}
+    local force=${2}
+    local dir="${HOT_OAT_DIR}/${namespace}"
+    local counter="${dir}/.counter"
+    local keyfile="${dir}/.key"
+    local secretkey
+    local b32key
+  
+    if [[ ! -d "${dir}" ]] ||
+       [[ ${force} -eq 1 ]]; then
+        mkdir -p "${dir}"
+        chmod 700 "${dir}"
+    fi
+
+    if [[ ! -r "${counter}" ]] ||
+       [[ ${force} -eq 1 ]]; then
+        echo 0 > "${counter}"
+    fi
+
+    if [[ ! -r "${keyfile}" ]] ||
+       [[ ${force} -eq 1 ]]; then
+        secretkey="$(openssl rand -hex 20)"
+        echo "Key [${namespace}] (hex): ${secretkey}"
+        b32key=$(echo -n "${secretkey}" |
+            python3 -c "import sys; import base64; import binascii; print(base64.b32encode(binascii.unhexlify(sys.stdin.read())).decode('utf-8'))")
+        echo -n "${b32key}" > "${keyfile}"
+    else
+        b32key="$(cat "${keyfile}")"
+    fi
+
+    echo "Key [${namespace}] (b32): ${b32key}"
+    qrcode "${namespace}" "${b32key}"
+}
+
+qrcode() {
+    local tokentype=hotp
+    local namespace="${1}"
+    local b32key="${2}"
+    options=( 
+        secret="${b32key}"
+        algorithm="${algorithm}"
+        issuer="${name}"
+        digits="${digits}"
+    )
+    qrencode \
+        -t ANSI256UTF8 \
+        "otpauth://${tokentype}/${namespace}:${namespace}?$(printf "%s&" "${options[@]}")"
+}
+
+while true; do
+    case "$1" in
+        -h|--help)
+            help
+            exit 0
+            ;;
+        -a|--algorithm)
+            algorithm="$2"
+            shift 2
+            if [[ ${algorithm} != "sha1" ]] &&
+               [[ ${algorithm} != "sha256" ]] &&
+               [[ ${algorithm} != "sha512" ]]; then
+                echo "Error: Invalid algorithm: ${algorithm}" >&2
+                help
+                exit 1
+            fi
+            ;;
+        -d|--digits)
+            digits="$2"
+            shift 2
+            if [[ ${digits} -ne 6 ]] &&
+               [[ ${digits} -ne 8 ]]; then
+                echo "Error: Invalid number of digits: ${digits}" >&2
+                help
+                exit 1
+            fi
+            ;;
+        -f|--force)
+            force=1
+            shift
+            ;;
+        -g|--gen-oath)
+            gen_oath=1
+            shift
+            ;;
+        -l|--list)
+            ls -1 "${HOT_OAT_DIR}"
+            exit 0
+            ;;
+        -r|--remove)
+            remove=1
+            shift
+            ;;
+        -v|--version)
+            echo "${name} ${version}"
+            exit 0
+            ;;
+        -y|--assumeyes)
+            assumeyes=1
+            shift
+            ;;
+        -*)
+            echo "Error: Unknown option: ${1}" >&2
+            help
+            exit 1
+            ;;
+        *)
+            namespace="$1"
+            shift
+            break
+            ;;
+    esac
+done
+
+if [[ -z "${namespace}" ]]; then
+    echo "Error: Missing namespace." >&2
+    help
+    exit 1
+fi
+
+if [[ ${gen_oath} -eq 1 ]] &&
+   [[ ${remove} -eq 1 ]]; then
+    echo "Error: Cannot generate and remove at the same time." >&2
+    help
+    exit 1
+fi
+
+if [[ ${force} -eq 1 ]]; then
+    warning "Force"
+fi
+
+if [[ ${remove} -eq 1 ]]; then
+    warning "Remove"
+    rm -Rf "${HOT_OAT_DIR}/${namespace:?}"
+    exit $?
+fi
+
+if [[ ${gen_oath} -eq 1 ]]; then
+    gen-oath "${namespace}" "${force}"
+    exit 0
+fi
+
+ns_dir="${HOT_OAT_DIR}/${namespace}"
+counter="${ns_dir}/.counter"
+keyfile="${ns_dir}/.key"
+
+if [[ ! -d "${ns_dir}" ]]; then
+    echo "Error: Namespace dir ${namespace} not found." >&2
+    help
+    exit 1
+fi
+
+if [[ ! -x "${HOT_OAT_COPY_TOOL}" ]]; then
+  echo "Error: ${HOT_OAT_COPY_TOOL} not found." >&2
+  help
+  exit 1
+fi
+
+if [[ -r "${counter}" ]]; then
+  count=$( cat "${counter}" )
+else
+  echo "Error: ${counter} not found." >&2
+  help
+  exit 1
+fi
+
+if [[ -r "${keyfile}" ]]; then
+  key=$( cat "${keyfile}" )
+else
+  echo "Error: ${key} not found." >&2
+  help
+  exit 1
+fi
+
+if ! hotp=$(oathtool -b -c "${count}" "${key}"); then
+  echo "Error: oathtool failed." >&2
+  exit 2
+fi
+
+echo "${hotp}" | ${HOT_OAT_COPY_TOOL} "${HOT_OAT_COPY_OPTIONS[@]}"
+echo $(( count + 1 )) >  "${counter}"
