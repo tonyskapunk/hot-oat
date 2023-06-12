@@ -1,16 +1,26 @@
 #!/bin/bash
 # Generate a one-time password using a key and a counter.
 
+DEFAULT_CONFIG=~/.config/hot-oat.conf
 DEFAULT_COPY_TOOL=$( type -p wl-copy 2>/dev/null )
 DEFAULT_COPY_OPTIONS=( -n -o )
 DEFAULT_DIR=~/.config/hot-oat
+DEFAULT_QRCODE_TOOL=$( type -p qrencode 2>/dev/null )
 readonly DEFAULT_COPY_TOOL
 readonly DEFAULT_COPY_OPTIONS
 readonly DEFAULT_DIR
+readonly DEFAULT_QRCODE_TOOL
+readonly DEFAULT_CONFIG
 
-HOT_OAT_COPY_TOOL=${HOT_OAT_COPY_TOOL:-${DEFAULT_COPY_TOOL}}
-HOT_OAT_COPY_OPTIONS=( "${HOT_OAT_COPY_OPTIONS:-${DEFAULT_COPY_OPTIONS}}" )
-HOT_OAT_DIR=${HOT_OAT_DIR:-${DEFAULT_DIR}}
+if [[ -r "${DEFAULT_CONFIG}" ]]; then
+    # shellcheck disable=SC1090
+    source "${DEFAULT_CONFIG}"
+fi
+
+HOT_OAT_COPY_TOOL=${HOT_OAT_COPY_TOOL:=${DEFAULT_COPY_TOOL}}
+HOT_OAT_COPY_OPTIONS=( "${HOT_OAT_COPY_OPTIONS:=${DEFAULT_COPY_OPTIONS[@]}}" )
+HOT_OAT_DIR=${HOT_OAT_DIR:=${DEFAULT_DIR}}
+HOT_OAT_QRCODE_TOOL=${HOT_OAT_QRCODE_TOOL:=${DEFAULT_QRCODE_TOOL}}
 
 name=$(basename "${0}")
 algorithm=sha1
@@ -18,7 +28,7 @@ assumeyes=0
 digits=6
 remove=0
 force=0
-version=1.0.0
+version=1.1.0
 
 help() {
     echo
@@ -34,26 +44,29 @@ help() {
     echo "  -d, --digits <digit>    The number of digits to use for the token, 6 or 8. (Default: 6)"
     echo "  -f, --force             Force key generation and counter reset. ⚠️"
     echo "  -g, --gen-oath          Generate key and counter in a namespace."
+    echo "                          Prints qrcode when key and counter exists."
     echo "  -l, --list              List namespaces."
     echo "  -r, --remove            Removes namespace. ⚠️"
     echo "  -y, --assumeyes         Automatically answer yes for all questions. ⚠️"
-    echo "  -v, --version           Show version an exit."
+    echo "  -v, --version           Print version."
     echo
     echo "Environment variables:"
+    echo "  These variables can be set in ${DEFAULT_CONFIG}."
+    echo
     echo "  HOT_OAT_COPY_TOOL       The command to use to copy the password to the clipboard."
     echo "  HOT_OAT_COPY_OPTIONS    The options to pass to the copy command."
     echo "  HOT_OAT_DIR             The directory where the key and counter are stored."
     echo
-    echo "The default directory is ${DEFAULT_DIR}."
-    echo "The default copy command is ${DEFAULT_COPY_TOOL}."
-    echo "The default copy options are ${DEFAULT_COPY_OPTIONS}."
+    echo "Using directory: ${DEFAULT_DIR}."
+    echo "Using copy command: ${HOT_OAT_COPY_TOOL}."
+    echo "Using copy options: ${HOT_OAT_COPY_OPTIONS[*]}."
     echo
 }
 
 warning() {
     local action=${1}
     if [[ ${assumeyes} -eq 0 ]]; then
-        read -p "Warning: ${action} could destroy data, are you sure? [y/N] " -n 1 -r continue
+        read -p "Warning: ${action} could destroy data, are you sure? [y/N] " -r continue
         echo
         if [[ ! ${continue} =~ ^[Yy]$ ]]; then
             echo "Aborting..." >&2
@@ -108,9 +121,13 @@ qrcode() {
         issuer="${name}"
         digits="${digits}"
     )
-    qrencode \
-        -t ANSI256UTF8 \
-        "otpauth://${tokentype}/${namespace}:${namespace}?$(printf "%s&" "${options[@]}")"
+    if [[ -x "${HOT_OAT_QRCODE_TOOL}" ]]; then
+        ${HOT_OAT_QRCODE_TOOL} \
+            -t ANSI256UTF8 \
+            "otpauth://${tokentype}/${namespace}:${namespace}?$(printf "%s&" "${options[@]}")"
+    else
+        echo "Warning: qrencode not found." >&2
+    fi
 }
 
 while true; do
@@ -215,12 +232,6 @@ if [[ ! -d "${ns_dir}" ]]; then
     exit 1
 fi
 
-if [[ ! -x "${HOT_OAT_COPY_TOOL}" ]]; then
-  echo "Error: ${HOT_OAT_COPY_TOOL} not found." >&2
-  help
-  exit 1
-fi
-
 if [[ -r "${counter}" ]]; then
   count=$( cat "${counter}" )
 else
@@ -242,5 +253,12 @@ if ! hotp=$(oathtool -b -c "${count}" "${key}"); then
   exit 2
 fi
 
-echo "${hotp}" | ${HOT_OAT_COPY_TOOL} "${HOT_OAT_COPY_OPTIONS[@]}"
+if [[ ! -x "${HOT_OAT_COPY_TOOL}" ]]; then
+  echo "Warning: No clipboard tool found, printing to stdout." >&2
+  echo "${hotp}"
+else
+  # shellcheck disable=SC2068
+  echo "${hotp}" | ${HOT_OAT_COPY_TOOL} ${HOT_OAT_COPY_OPTIONS[@]}
+fi
+
 echo $(( count + 1 )) >  "${counter}"
