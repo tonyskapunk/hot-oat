@@ -8,7 +8,7 @@
 
 🔥🥣
 
-A wrapper script to setup and run HOTP (Hash-based message authentication code One Time Password)
+A wrapper script to setup and run HOTP (Hash-based message authentication code One Time Password).
 
 ## Requirements and Optional Packages
 
@@ -75,13 +75,17 @@ Copy the script `hot-oat` to a directory in your path, e.g. `~/.local/bin`
 
 ## Overriding defaults
 
+These variables should be used to override the default values. Also, a config file can be placed under `~/.config/hot-oat.conf` to define custom values. See the example file [hot-oat.conf](./hot-oat.conf)
+
 | Environment Name     | Default             | Description                                              |
 |----------------------|---------------------|----------------------------------------------------------|
 | HOT_OAT_COPY_TOOL    | wl-copy             | The command to use to copy the password to the clipboard |
 | HOT_OAT_COPY_OPTIONS | -n -o               | The options to pass to the copy command                  |
 | HOT_OAT_DIR          | `~/.config/hot-oat` | The directory where the key and counter are stored       |
 
-### Example
+### Examples
+
+[![Demo setting up a HOTP and generating OTPs](./assets/gen-demo.gif)](https://asciinema.org/a/ujLAOqBXiaD8X6vUwTv1p2Wsu)
 
 ## Acknowledgments
 
